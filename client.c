@@ -21,6 +21,7 @@ int main(int args, char * argv[]) {
 
 	char recvline[MAXLEN];
 	char sendline[MAXLEN];
+	char syst[MAXLEN];
 	int n;
 
 	if((svr = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
@@ -61,6 +62,16 @@ int main(int args, char * argv[]) {
 	
 		if(FD_ISSET(0, &read_fds)) {
 			if(read(0, sendline, MAXLEN) > 0) {
+				if(strncmp(sendline, "/j", 2) == 0) {
+					int i;
+					char rn[10];
+					for(i = 0; i < strlen(sendline)-4; i++) {
+						rn[i] = sendline[i+3];
+					}
+					rn[strlen(sendline)-4] = '\0';
+					sprintf(syst, "./client 127.0.0.1 %s", rn);
+					system(syst);
+				}
 				send(svr, sendline, strlen(sendline), 0);
 			}
 		}
