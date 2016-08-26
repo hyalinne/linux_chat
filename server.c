@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <wait.h>
 
 #define	MAXLEN	1024
 
@@ -14,32 +15,37 @@ struct client {
 };
 
 struct room {
+	int desc;
 	int room_no;
 	char name[50];
 	struct room * next;
 };
 
-int add_client(int svr, int num_cli);
+void add_client(int svr); // both room & client 
 void remove_client(struct client * prev, struct client * temp);
-int command(struct client * prev, struct client * temp, char * rline, int n, int num_cli);
+void remove_room(int room_no);
+void command(struct client * prev, struct client * temp, char * rline, int n);
 void make_room(int room_no);
-void print_command(int desc);
 
 struct client * first, * last;
-struct client * froom = NULL, * lroom = NULL;
+struct room * froom = NULL, * lroom = NULL;
+int num_cli = 0;
+int num_room = 0;
 pid_t pid;
+
+char * port;
 
 int main(int args, char * argv[]) {
 	if(args < 2) {
 		printf("Usage : %s [port number]\n", argv[0]);
 		return -1;
 	}
+	port = argv[1];
 
 	int	svr;	// server	
 	struct client * temp, * prev;
 
 
-	int num_cli = 0;
 	struct	sockaddr_in	svr_addr;	// server socket set
 
 	int check;
@@ -81,6 +87,8 @@ int main(int args, char * argv[]) {
 
 		if(num_cli-1 >= 0) {
 			max = last->desc;
+			if(lroom != NULL) {
+			}
 			temp = first;
 			for(i = 0; i < num_cli; i++) {
 				if(temp->desc > max) max = temp->desc;
@@ -96,7 +104,7 @@ int main(int args, char * argv[]) {
 		}
 
 		if(FD_ISSET(svr, &read_fds)) {
-			num_cli = add_client(svr, num_cli);
+			add_client(svr);
 		}
 
 		temp = first;
@@ -105,13 +113,13 @@ int main(int args, char * argv[]) {
 				int n = recv(temp->desc, rline, MAXLEN, 0);
 				if(n == 0) {
 					remove_client(prev, temp);
-					num_cli--;
 					break;
 				} else if(n > 0) {
 					rline[n] = '\0';
+					printf("%d : %s", temp->desc, rline);
 // command
 					if(rline[0] == '/') {
-						num_cli = command(prev, temp, rline, n, num_cli);
+						command(prev, temp, rline, n);
 						continue;
 					}
 				}
@@ -125,10 +133,11 @@ int main(int args, char * argv[]) {
 	return 0;
 }
 
-int add_client(int svr, int num_cli) {
+void add_client(int svr) {
 	int len, cli;
 	struct sockaddr_in cli_addr;
 	struct client * new;
+	struct room * nr; // room
 
 	char msg[MAXLEN];
 
@@ -136,19 +145,39 @@ int add_client(int svr, int num_cli) {
 	cli = accept(svr, (struct sockaddr *)&cli_addr, &len);
 
 	if(cli != -1) {
-		new = (struct client *)malloc(sizeof(struct client));
-		new->desc = cli;
-		new->next = NULL;
-		sprintf(new->name, "%d", cli);
-		if(num_cli == 0) {
-			first = last = new;
-		} else {
-			last->next = new;
-			last = new;
+		if(recv(cli, msg, MAXLEN, 0) > 0) {
+			if(strncmp(msg, "c", 1) == 0) {
+				new = (struct client *)malloc(sizeof(struct client));
+				new->desc = cli;
+				new->next = NULL;
+				sprintf(new->name, "%d", cli);
+				if(num_cli == 0) {
+					first = last = new;
+				} else {
+					last->next = new;
+					last = new;
+				}
+				printf("Add new client : %s\n", new->name);
+				num_cli++;
+			} else if(strncmp(msg, "r", 1) == 0) {
+				nr = (struct room *)malloc(sizeof(struct room));
+				nr->desc = cli;
+				nr->next = NULL;
+				memset(msg, "0x00", MAXLEN);
+				if(recv(cli, msg, MAXLEN, 0) > 0) {
+					nr->room_no = atoi(msg);
+				}
+				if(num_room == 0) {
+					froom = lroom = nr;
+				} else {
+					lroom->next = nr;
+					lroom = nr;
+				}
+				printf("Add new room : %d\n", nr->room_no);
+				num_room++;
+			}
 		}
 	}
-
-	return num_cli+1;
 }
 
 void remove_client(struct client * prev, struct client * temp) {
@@ -163,45 +192,30 @@ void remove_client(struct client * prev, struct client * temp) {
 	} else {
 		prev->next = temp->next;	
 	}
+	num_cli--;
 }
 
-void add_room(int room_no) {
-	struct room * new;
-
-	/*
-	new = (struct room *)malloc(sizeof(struct room));
-	new->next = NULL;
-	sprintf(new->name, "%d", cli);
-	if(froom == NULL) {
-		froom = lroom = new;
-	} else {
-		lroom->next = new;
-		lroom = new;
-	}
-	*/
-}
-
-void remove_room(struct room * temp) {
-	/*
-	struct room * tmp = first;
+void remove_room(int room_no) {
+	struct room * prev = froom;
+	struct room * tmp = froom;
 	while(tmp->next != NULL) {
-		if(tmp == temp) {
+		if(tmp->room_no == room_no) {
 			break;
 		}
+		prev = tmp;
+		tmp = tmp->next;
 	}
-
-	if(temp == first) {
-		first = temp->next;
-	} else if(temp == last) {
-		last = prev;
-		last->next = NULL;
-	} else {
-		prev->next = temp->next;	
+	if(tmp->room_no == room_no) {
+		close(tmp->desc);
 	}
-	*/
+	if(lroom->room_no == room_no) {
+		prev->next = NULL;
+		lroom = prev;	
+	}
+	num_room--;
 }
 
-int command(struct client * prev, struct client * temp, char * rline, int n, int num_cli) {
+void command(struct client * prev, struct client * temp, char * rline, int n) {
 	int i, e;
 	char rn[10]; // room number
 	char msg[MAXLEN];
@@ -211,7 +225,6 @@ int command(struct client * prev, struct client * temp, char * rline, int n, int
 
 	if(rline[1] == 'q') {
 		remove_client(prev, temp);
-		return num_cli-1;
 	} else if(rline[1] == 'n') {
 		memset(temp->name, NULL, sizeof(temp->name));
 		for(i = 0; i < n-5; i++) {
@@ -219,7 +232,8 @@ int command(struct client * prev, struct client * temp, char * rline, int n, int
 		}
 		temp->name[n-5] = '\0';
 	} else if(rline[1] == 'h') {
-		print_command(temp->desc);
+		sprintf(msg, "q : quit\nn [name] : change your nickname\nm [room number] : make chat room\nj [room number] : join chat room\n");
+		send(temp->desc, msg, strlen(msg), 0);
 	} else if(rline[1] == 'm') {
 		for(i = 0; i < n-4; i++) {
 			rn[i] = rline[i+3];	
@@ -230,26 +244,24 @@ int command(struct client * prev, struct client * temp, char * rline, int n, int
 		sprintf(msg, "h : show command\n");
 		send(temp->desc, msg, strlen(msg), 0);
 	}
-	return num_cli;
 }
 
 void make_room(int room_no) {
 	char msg[MAXLEN];
+	int status;
+	pid_t pid_child;
 
-	sprintf(msg, "./chat %d", 10000 + room_no);
+	sprintf(msg, "./chat 127.0.0.1 %s %d", port, 10000 + room_no);
 	pid = fork();
 	if(pid  < 0) {
 		perror("fork error : ");
 	} else if(pid == 0) {
 		printf("%d room is made.\n", room_no);
 		system(msg);
+	} else {
+		pid_child = waitpid(pid, &status, WNOHANG);
+		if(0 != pid_child) {
+			printf("Room close.\n");
+		}	
 	}
-}
-
-
-void print_command(int desc) {
-	char msg[MAXLEN];
-
-	sprintf(msg, "q : quit\nn [name] : change your nickname\nm [room number] : make chat room\nj [room number] : join chat room\n");
-	send(desc, msg, strlen(msg), 0);
 }

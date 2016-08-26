@@ -58,7 +58,7 @@ int main(int args, char * argv[]) {
 
 	bzero((char *)&up_addr, sizeof(up_addr));
 	up_addr.sin_family = AF_INET;
-	up_addr.sin_addr.s_addr = htonl(argv[1]);
+	up_addr.sin_addr.s_addr = inet_addr(argv[1]);
 	up_addr.sin_port = htons(atoi(argv[2]));
 
 	if(connect(server, (struct sockaddr *)&up_addr, sizeof(up_addr)) < 0) {
@@ -67,6 +67,7 @@ int main(int args, char * argv[]) {
 	}
 
 	send(server, "r", 1, 0);
+	send(server, argv[3], strlen(argv[3]), 0);
 
 	bzero((char *)&svr_addr, sizeof(svr_addr));
 	svr_addr.sin_family = AF_INET;

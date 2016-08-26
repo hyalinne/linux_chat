@@ -53,7 +53,7 @@ int main(int args, char * argv[]) {
 		}
 		
 		if(FD_ISSET(svr, &read_fds)) {
-			if(n = recv(svr, recvline, MAXLEN, 0) > 0) {
+			if((n = recv(svr, recvline, MAXLEN, 0)) > 0) {
 				recvline[n] = '\0';	
 				printf("%s", recvline);
 			}
